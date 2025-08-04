@@ -1,0 +1,3 @@
+Los métodos o funciones que se desarrollaron estan en el archivo actividad_service.dart que esta dentro de la ruta CreditTEC/lib/services
+Los 3 métodos o funciones que se desarrollaron fueron utilizando la librería de dartz y estan implementados en la función obtenerActividades, insertarActividad y eliminarActividad.
+En estos se aplican conceptos como Either, Left, Right, .fold() u operaciones puramente funcionales.
