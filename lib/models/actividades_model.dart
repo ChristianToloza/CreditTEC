@@ -2,7 +2,7 @@ import 'categorias_model.dart';
 import 'encargados_model.dart';
 
 class Actividad {
-  final int id;
+  final String id;
   final String actividad;
   final double creditos;
   final String ubicacion;
@@ -19,13 +19,30 @@ class Actividad {
   });
 
   factory Actividad.fromJson(Map<String, dynamic> json) {
+    final actividadData = json['data'] ?? json;
+
+    if (actividadData == null) {
+      throw Exception("No se encontraron datos de actividad en la respuesta");
+    }
+
     return Actividad(
-      id: json['id'],
-      actividad: json['actividad'],
-      creditos: (json['creditos'] as num).toDouble(),
-      ubicacion: json['ubicacion'],
-      categoria: Categoria.fromJson(json['categoria']),
-      encargado: Encargado.fromJson(json['encargado']),
+      id: actividadData['id_act'] ?? '',
+      actividad: actividadData['actividad'] ?? '',
+      creditos: (actividadData['creditos'] as num?)?.toDouble() ?? 0.0,
+      ubicacion: actividadData['ubicacion'] ?? '',
+      categoria: Categoria.fromJson(actividadData['categoria'] ?? {}),
+      encargado: Encargado.fromJson(actividadData['encargado'] ?? {}),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id_act': id,
+      'actividad': actividad,
+      'creditos': creditos,
+      'ubicacion': ubicacion,
+      'categoria': categoria.toJson(),
+      'encargado': encargado.toJson(),
+    };
   }
 }

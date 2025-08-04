@@ -28,10 +28,12 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  dartz: ^0.10.1
   flutter:
     sdk: flutter
   http: ^0.13.6 # o la versión más reciente disponible
   provider: ^6.1.1 # Usa la última versión estable disponible
+  shared_preferences: ^2.2.3 # Añadida esta línea (o la última versión)
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

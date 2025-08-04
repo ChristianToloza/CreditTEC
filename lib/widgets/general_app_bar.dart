@@ -6,13 +6,18 @@ class GeneralAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      title: const Text('Créditos Complementarios'),
-      backgroundColor: Colors.indigo,
-      actions: <Widget>[
+      title: const Text('CrediTEC'),
+      centerTitle: true,
+      actions: [
         IconButton(
-          icon: const Icon(Icons.search),
+          icon: const Icon(Icons.help_outline),
           onPressed: () {
-            // Puedes agregar una acción para el botón
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Centro de ayuda próximamente'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
           },
         ),
       ],
@@ -20,5 +25,5 @@ class GeneralAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight); // Tamaño predeterminado del AppBar
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }

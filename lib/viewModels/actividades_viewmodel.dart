@@ -1,275 +1,347 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/actividades_model.dart';
+import '../models/categorias_model.dart';
+import '../models/encargados_model.dart';
+import '../services/actividad_service.dart';
+import 'package:dartz/dartz.dart';
 
 class ActividadViewModel extends ChangeNotifier {
+  final ActividadService _service = ActividadService();
+
   List<Actividad> actividades = [];
+  List<Categoria> categorias = [];
+  List<Encargado> encargados = [];
   bool isLoading = false;
   String? errorMessage;
+  String? successMessage;
 
-  // MÉTODO PRINCIPAL: Con mejor manejo de errores y diagnósticos
   Future<void> fetchActividades() async {
     try {
-      print('🔄 Iniciando carga de actividades...');
-      print('🔧 Verificando conectividad...');
+      _setLoading(true);
 
-      isLoading = true;
-      errorMessage = null;
-      notifyListeners();
+      print('Iniciando carga de actividades...');
+      final result = await _service.obtenerActividades();
 
-      // PASO 1: Verificar si podemos hacer ping al servidor
-      await _testConnectivity();
+      result.fold(
+        (error) {
+          _handleGenericError(
+            error,
+          ); // o algún método que maneje errores con mensaje String
+        },
+        (data) {
+          actividades = data;
+          print('${actividades.length} actividades cargadas exitosamente');
+          _clearError();
+        },
+      );
+    } catch (e) {
+      _handleGenericError(e);
+    } finally {
+      _setLoading(false);
+    }
+  }
 
-      final url = 'http://192.168.173.155:7211/api/actividades';
-      print('📡 Haciendo petición a: $url');
+  Future<void> cargarDatosFormulario() async {
+    _setLoading(true);
+    try {
+      // Obtener resultados por separado con Either
+      final categoriasResult = await _service.obtenerCategorias();
+      final encargadosResult = await _service.obtenerEncargados();
 
-      final response = await http
-          .get(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-          )
-          .timeout(
-            const Duration(seconds: 30), // Aumentamos timeout
-            onTimeout: () {
-              print('⏰ Timeout después de 30 segundos');
-              throw TimeoutException(
-                'La conexión tardó demasiado',
-                const Duration(seconds: 30),
-              );
-            },
-          );
+      bool hasError = false;
 
-      print('📡 Status Code: ${response.statusCode}');
-      print('📡 Response Headers: ${response.headers}');
-      print('📡 Response Body: ${response.body}');
+      categoriasResult.fold(
+        (error) {
+          errorMessage = 'Error al obtener categorías: $error';
+          hasError = true;
+        },
+        (data) {
+          categorias = data;
+        },
+      );
 
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) {
-          print('⚠️ Respuesta vacía del servidor');
-          actividades = [];
-        } else {
-          try {
-            final List<dynamic> data = jsonDecode(response.body);
-            print(
-              '✅ JSON parseado exitosamente. ${data.length} elementos encontrados',
-            );
+      encargadosResult.fold(
+        (error) {
+          errorMessage = 'Error al obtener encargados: $error';
+          hasError = true;
+        },
+        (data) {
+          encargados = data;
+        },
+      );
 
-            actividades = [];
-            for (int i = 0; i < data.length; i++) {
-              try {
-                final actividad = Actividad.fromJson(data[i]);
-                actividades.add(actividad);
-                print('✅ Actividad ${i + 1} parseada: ${actividad.actividad}');
-              } catch (e) {
-                print('❌ Error parseando actividad ${i + 1}: $e');
-                print('❌ JSON problemático: ${data[i]}');
-              }
-            }
-
-            print('✅ Total de actividades cargadas: ${actividades.length}');
-          } catch (e) {
-            errorMessage = 'Error al procesar la respuesta del servidor: $e';
-            print('💥 Error de parseo JSON: $e');
-          }
-        }
-      } else {
-        errorMessage =
-            'Error del servidor (${response.statusCode}): ${response.body}';
-        print('❌ Error HTTP: ${response.statusCode}');
-        print('❌ Respuesta: ${response.body}');
+      if (!hasError) {
+        print(
+          'Datos cargados: ${categorias.length} categorías, ${encargados.length} encargados',
+        );
+        _clearError();
       }
-    } on TimeoutException catch (e) {
-      errorMessage = '''
-🕐 Error de Timeout: No se pudo conectar al servidor.
+    } catch (e) {
+      _handleGenericError(e);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> insertarActividad({
+    required String actividad,
+    required double creditos,
+    required String ubicacion,
+    required String idCategoria,
+    required String categoriaNombre,
+    required String idEncargado,
+    required String encargadoNombre,
+    required String encargadoApellido1,
+    required String encargadoApellido2,
+    required String correoEncargado,
+  }) async {
+    _setLoading(true);
+    _clearMessages();
+
+    print('Insertando actividad: $actividad');
+
+    final resultado = await _service.insertarActividad(
+      actividad: actividad,
+      creditos: creditos,
+      ubicacion: ubicacion,
+      idCategoria: idCategoria,
+      categoriaNombre: categoriaNombre,
+      idEncargado: idEncargado,
+      encargadoNombre: encargadoNombre,
+      encargadoApellido1: encargadoApellido1,
+      encargadoApellido2: encargadoApellido2,
+      correoEncargado: correoEncargado,
+    );
+
+    return resultado.fold(
+      (error) {
+        errorMessage = error;
+        _setLoading(false);
+        return false;
+      },
+      (actividadCreada) async {
+        successMessage =
+            'Actividad "${actividadCreada.actividad}" creada exitosamente';
+        await fetchActividades();
+        _setLoading(false);
+        return true;
+      },
+    );
+  }
+
+  Future<bool> insertarActividadConObjeto(Actividad actividad) async {
+    _setLoading(true);
+    _clearMessages();
+
+    final resultado = await _service.insertarActividadConObjeto(actividad);
+
+    return resultado.fold(
+      (error) {
+        errorMessage = error;
+        _setLoading(false);
+        return false;
+      },
+      (actividadCreada) async {
+        successMessage =
+            'Actividad "${actividadCreada.actividad}" creada exitosamente';
+        await fetchActividades();
+        _setLoading(false);
+        return true;
+      },
+    );
+  }
+
+  Future<bool> actualizarActividad(String id, Actividad actividad) async {
+    _setLoading(true);
+    _clearMessages();
+
+    final resultado = await _service.actualizarActividad(id, actividad);
+
+    return resultado.fold(
+      (error) {
+        errorMessage = error;
+        _setLoading(false);
+        return false;
+      },
+      (_) async {
+        successMessage = 'Actividad actualizada exitosamente';
+        await fetchActividades();
+        _setLoading(false);
+        return true;
+      },
+    );
+  }
+
+  Future<bool> eliminarActividad(String id) async {
+    _setLoading(true);
+    _clearMessages();
+
+    final resultado = await _service.eliminarActividad(id);
+
+    return resultado.fold(
+      (error) {
+        errorMessage = error;
+        _setLoading(false);
+        return false;
+      },
+      (_) async {
+        successMessage = 'Actividad eliminada exitosamente';
+        await fetchActividades();
+        _setLoading(false);
+        return true;
+      },
+    );
+  }
+
+  Future<void> verificarConectividad() async {
+    try {
+      _setLoading(true);
+
+      final conectado = await _service.verificarConectividad();
+
+      if (conectado) {
+        successMessage = 'Conectividad OK';
+      } else {
+        errorMessage = 'Sin conectividad al servidor';
+      }
+    } catch (e) {
+      errorMessage = 'Error verificando conectividad: $e';
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> diagnosticarConexion() async {
+    try {
+      _setLoading(true);
+
+      final ipFuncional = await _service.diagnosticarConexion();
+
+      if (ipFuncional != null) {
+        successMessage = '''
+🎉 IP FUNCIONAL ENCONTRADA: $ipFuncional
+
+Actualiza tu ActividadService para usar esta IP:
+static const String _baseUrl = '$ipFuncional/api';
+''';
+      } else {
+        errorMessage = '''
+NINGUNA IP FUNCIONÓ
+
+Soluciones:
+1. Verifica que tu API esté ejecutándose
+2. Obtén la IP correcta con:
+   • Windows: ipconfig
+   • Linux/Mac: ifconfig
+3. Asegúrate de estar en la misma red WiFi
+4. Revisa el firewall del servidor
+''';
+      }
+    } catch (e) {
+      errorMessage = 'Error en diagnóstico: $e';
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  void _setLoading(bool loading) {
+    isLoading = loading;
+    notifyListeners();
+  }
+
+  void _clearError() {
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  void _clearMessages() {
+    errorMessage = null;
+    successMessage = null;
+  }
+
+  void _handleTimeoutError(TimeoutException e) {
+    errorMessage = '''
+⏱Timeout de Conexión
+
+El servidor tardó demasiado en responder.
 
 Posibles causas:
-• El servidor no está ejecutándose en http://192.168.173.155:7211
-• Tu dispositivo no está en la misma red WiFi
-• El firewall está bloqueando la conexión
-• La dirección IP ha cambiado
+• Servidor sobrecargado o no disponible
+• Conexión de red lenta
+• Firewall bloqueando la conexión
 
 Soluciones:
 1. Verifica que la API esté corriendo
-2. Confirma la dirección IP del servidor
-3. Asegúrate de estar en la misma red WiFi
-4. Intenta usar la IP 10.0.2.2 si estás en emulador
+2. Prueba el diagnóstico de conexión
+3. Revisa tu conexión a internet
+''';
+    print('TimeoutException: $e');
+  }
 
-Error técnico: $e''';
-      print('⏰ TimeoutException: $e');
-    } on SocketException catch (e) {
-      errorMessage = '''
-🌐 Error de Conexión: No se puede conectar al servidor.
+  void _handleConnectionError(SocketException e) {
+    errorMessage = '''
+🔌 Error de Conexión
 
-Detalles del error: $e
+No se puede conectar al servidor.
 
 Verifica que:
-• La API esté ejecutándose en http://192.168.173.155:7211
-• Tu dispositivo esté en la misma red WiFi
-• No haya firewall bloqueando el puerto 7211
+• La API esté ejecutándose
+• Estés en la misma red WiFi
+• No haya firewall bloqueando el puerto
+• La IP del servidor sea correcta
 
-Si usas emulador Android, prueba con: http://10.0.2.2:7211''';
-      print('🌐 SocketException: $e');
-    } on HttpException catch (e) {
-      errorMessage = 'Error HTTP: $e';
-      print('📡 HttpException: $e');
-    } on FormatException catch (e) {
-      errorMessage = 'Error de formato en la respuesta del servidor: $e';
-      print('📄 FormatException: $e');
-    } catch (e) {
-      errorMessage = 'Error inesperado: $e';
-      print('💥 Exception general: $e');
-    } finally {
-      isLoading = false;
-      notifyListeners();
-      print(
-        '🏁 Proceso finalizado. Loading: $isLoading, Error: $errorMessage, Actividades: ${actividades.length}',
-      );
-    }
+💡 Prueba el diagnóstico automático para encontrar la IP correcta.
+''';
+    print('SocketException: $e');
   }
 
-  // Método para verificar conectividad básica
-  Future<void> _testConnectivity() async {
-    try {
-      print('🔍 Probando conectividad...');
-      final result = await InternetAddress.lookup('google.com');
-      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        print('✅ Conexión a internet OK');
-      }
-    } on SocketException catch (_) {
-      print('❌ Sin conexión a internet');
-      throw SocketException('Sin conexión a internet');
-    }
+  void _handleHttpError(HttpException e) {
+    errorMessage = 'Error del servidor: ${e.message}';
+    print('HttpException: $e');
   }
 
-  // Método alternativo para emulador
-  Future<void> fetchActividadesEmulador() async {
-    try {
-      print('🔄 Iniciando carga para emulador...');
-
-      isLoading = true;
-      errorMessage = null;
-      notifyListeners();
-
-      // Para emulador Android usa 10.0.2.2
-      final url = 'http://10.0.2.2:7211/api/actividades';
-      print('📡 Haciendo petición a: $url');
-
-      final response = await http
-          .get(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 30));
-
-      print('📡 Status Code: ${response.statusCode}');
-      print('📡 Response Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        actividades = data.map((json) => Actividad.fromJson(json)).toList();
-        print('✅ Total de actividades cargadas: ${actividades.length}');
-      } else {
-        errorMessage =
-            'Error del servidor (${response.statusCode}): ${response.body}';
-      }
-    } catch (e) {
-      errorMessage = 'Error: $e';
-      print('💥 Exception: $e');
-    } finally {
-      isLoading = false;
-      notifyListeners();
-    }
+  void _handleFormatError(FormatException e) {
+    errorMessage =
+        'Error de formato en la respuesta del servidor: ${e.message}';
+    print('FormatException: $e');
   }
 
-  // OPCIÓN 2: Si necesitas certificados SSL personalizados
-  Future<void> fetchActividadesConHttpClient() async {
-    HttpClient? httpClient;
-    try {
-      print('🔄 Iniciando carga de actividades con HttpClient...');
-
-      isLoading = true;
-      errorMessage = null;
-      notifyListeners();
-
-      // Crear HttpClient personalizado
-      httpClient =
-          HttpClient()
-            ..badCertificateCallback =
-                (X509Certificate cert, String host, int port) => true;
-
-      final request = await httpClient.getUrl(
-        Uri.parse('http://192.168.173.155:7211/api/actividades'),
-      );
-
-      // Agregar headers
-      request.headers.set('Content-Type', 'application/json');
-      request.headers.set('Accept', 'application/json');
-
-      final response = await request.close().timeout(
-        const Duration(seconds: 15),
-      );
-
-      print('📡 Status Code: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final responseBody = await response.transform(utf8.decoder).join();
-        print('📡 Response Body: $responseBody');
-
-        if (responseBody.isEmpty) {
-          print('⚠️ Respuesta vacía del servidor');
-          actividades = [];
-        } else {
-          try {
-            final List<dynamic> data = jsonDecode(responseBody);
-            print(
-              '✅ JSON parseado exitosamente. ${data.length} elementos encontrados',
-            );
-
-            actividades = [];
-            for (int i = 0; i < data.length; i++) {
-              try {
-                final actividad = Actividad.fromJson(data[i]);
-                actividades.add(actividad);
-                print('✅ Actividad ${i + 1} parseada: ${actividad.actividad}');
-              } catch (e) {
-                print('❌ Error parseando actividad ${i + 1}: $e');
-              }
-            }
-
-            print('✅ Total de actividades cargadas: ${actividades.length}');
-          } catch (e) {
-            errorMessage = 'Error al procesar la respuesta del servidor: $e';
-            print('💥 Error de parseo JSON: $e');
-          }
-        }
-      } else {
-        final errorBody = await response.transform(utf8.decoder).join();
-        errorMessage =
-            'Error del servidor (${response.statusCode}): $errorBody';
-        print('❌ Error HTTP: ${response.statusCode}');
-      }
-    } catch (e) {
-      errorMessage = 'Error de conexión: $e';
-      print('💥 Exception: $e');
-    } finally {
-      httpClient?.close();
-      isLoading = false;
-      notifyListeners();
-    }
+  void _handleGenericError(dynamic e) {
+    errorMessage = 'Error inesperado: $e';
+    print('Error genérico: $e');
   }
 
-  void clearError() {
-    errorMessage = null;
+  void clearMessages() {
+    _clearMessages();
     notifyListeners();
+  }
+
+  void retry() {
+    fetchActividades();
+  }
+
+  Categoria? obtenerCategoriaPorId(String id) {
+    try {
+      return categorias.firstWhere((cat) => cat.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Encargado? obtenerEncargadoPorId(String id) {
+    try {
+      return encargados.firstWhere((enc) => enc.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _service.dispose();
+    super.dispose();
   }
 }
